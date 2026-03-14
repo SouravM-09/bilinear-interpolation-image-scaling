@@ -2,7 +2,7 @@
 
 # Hardware Image Scaler using Bilinear Interpolation (Verilog HDL)
 
-This project implements a **hardware-based image scaling system using bilinear interpolation** in **Verilog HDL**. The design demonstrates how image processing algorithms can be implemented directly in hardware using digital architecture.
+This project implements a **hardware-based image scaling system using bilinear interpolation** in **Verilog HDL**. All modules (`top-level scaler`, `interpolation unit`, and `control FSM`) are combined in a single file: `image.v`. The design demonstrates how image processing algorithms can be implemented directly in hardware using digital architecture.
 
 The system computes interpolated pixel values by considering the **four neighbouring pixels** around a target pixel and generating a smooth scaled image output. The architecture is designed to be **efficient, parameterized, and suitable for FPGA-based image processing applications**.
 
@@ -75,52 +75,57 @@ This method provides **smoother image scaling results compared to nearest-neighb
 ## Tools Used
 
 * **Verilog HDL** – Hardware description and design
-* **Vivado** – Simulation and synthesis
+* **Vivado / ModelSim / Icarus Verilog** – Simulation and synthesis
 * **MATLAB / Python** – Image preprocessing (optional)
 
 ---
 
 ## Repository Structure
-
-```
-verilog-bilinear-image-scaler
+verilog-bilinear-image-scaler/
 │
-├── src
-│   ├── bilinear_scaler.v
-│   ├── interpolation_unit.v
-│   ├── control_fsm.v
+├── src/
+│ └── image.v # All Verilog modules combined in one file
 │
-├── testbench
-│   └── scaler_tb.v
+├── testbench/
+│ └── tb_image_scaler.v # Testbench for simulation
 │
-├── images
-│   ├── input_image.png
-│   ├── scaled_output.png
+├── images/
+│ └── input_image.png # Example input image
 │
 └── README.md
-```
+
+
+---
+
+## Simulation
+
+1. Open your preferred **Verilog simulator** (Vivado, ModelSim, Icarus Verilog).  
+2. Add the source file `src/image.v` and the testbench `testbench/tb_image_scaler.v`.  
+3. Compile the design and run the simulation.  
+4. Observe the scaled output in the waveform or export the processed image from simulation output.
 
 ---
 
 ## Applications
 
-* FPGA based image processing systems
-* Real-time video scaling
-* Embedded multimedia devices
-* Hardware accelerators for image processing
+* FPGA-based image processing systems  
+* Real-time video scaling  
+* Embedded multimedia devices  
+* Hardware accelerators for image processing  
 
 ---
 
 ## Future Improvements
 
-* FPGA implementation and hardware testing
-* Pipeline optimization for higher throughput
-* Integration with video processing pipeline
+* FPGA implementation and hardware testing  
+* Pipeline optimization for higher throughput  
+* Integration with video processing pipeline  
 
 ---
 
 ## Author
 
-**Sourav Mandal**
-B.Tech Electronics Engineering
-IIT (BHU) Varanasi
+**Sourav Mandal**  
+B.Tech Electronics Engineering  
+IIT (BHU) Varanasi  
+[LinkedIn](https://www.linkedin.com/in/sourav-mandal-91517b320) | [Email](mailto:sourav.mandal.ece24@itbhu.ac.in)
