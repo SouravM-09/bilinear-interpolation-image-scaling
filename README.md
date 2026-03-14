@@ -78,17 +78,6 @@ The output pixel value is computed using a weighted average of these four pixels
 
 ---
 
-## Repository Structure
-verilog-bilinear-image-scaler/
-├── `image.v`                
-├── `tb_image_scaler.v`      
-├── `input_image.png`        
-├── `gray_quality.py`        
-├── `gray_to_hex.py`
-├── `rgb_quality.py`
-├── `rgb_to_hex.py`
-└── `README.md`
----
 
 ## Simulation Instructions
 
