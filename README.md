@@ -12,10 +12,10 @@ The system computes interpolated pixel values by considering the **four neighbou
 
 Image scaling is an important operation in many digital systems such as:
 
-* Digital cameras
-* Display controllers
-* Video processing units
-* Embedded vision systems
+* Digital cameras  
+* Display controllers  
+* Video processing units  
+* Embedded vision systems  
 
 Bilinear interpolation provides better image quality compared to nearest-neighbour interpolation by using a **weighted average of surrounding pixels**.
 
@@ -25,12 +25,12 @@ This project implements the bilinear interpolation algorithm in **hardware using
 
 ## Key Features
 
-* Hardware implementation of **bilinear interpolation algorithm**
-* **FSM-based control architecture**
-* Uses **fixed-point arithmetic (Q8.8)** to avoid floating-point computation
-* Fetches **four neighbouring pixels (p00, p10, p01, p11)** for interpolation
-* **Parameterized architecture** supporting multiple image resolutions
-* Supports **both grayscale and RGB image scaling**
+* Hardware implementation of **bilinear interpolation algorithm**  
+* **FSM-based control architecture**  
+* Uses **fixed-point arithmetic (Q8.8)** to avoid floating-point computation  
+* Fetches **four neighbouring pixels (p00, p10, p01, p11)** for interpolation  
+* **Parameterized architecture** supporting multiple image resolutions  
+* Supports **both grayscale and RGB image scaling**  
 * Designed for **FPGA and hardware accelerator applications**
 
 ---
@@ -61,21 +61,19 @@ Implements the interpolation calculations using **Q8.8 fixed-point representatio
 
 For a pixel located between four neighbouring pixels:
 
-* p00
-* p10
-* p01
-* p11
+* p00  
+* p10  
+* p01  
+* p11  
 
-The output pixel value is computed using a weighted average of these four pixels.
-
-This method provides **smoother image scaling results compared to nearest-neighbour interpolation**.
+The output pixel value is computed using a weighted average of these four pixels. This method provides **smoother image scaling results compared to nearest-neighbour interpolation**.
 
 ---
 
 ## Tools Used
 
-* **Verilog HDL** – Hardware description and design
-* **Vivado / ModelSim / Icarus Verilog** – Simulation and synthesis
+* **Verilog HDL** – Hardware description and design  
+* **Vivado / ModelSim / Icarus Verilog** – Simulation and synthesis  
 * **MATLAB / Python** – Image preprocessing (optional)
 
 ---
@@ -83,24 +81,21 @@ This method provides **smoother image scaling results compared to nearest-neighb
 ## Repository Structure
 verilog-bilinear-image-scaler/
 │
-├── src/
-│ └── image.v # All Verilog modules combined in one file
-│
-├── testbench/
-│ └── tb_image_scaler.v # Testbench for simulation
-│
-├── images/
-│ └── input_image.png # Example input image
-│
+├── image.v                # All Verilog modules combined in one file
+├── tb_image_scaler.v      # Testbench for simulation
+├── input_image.png        # Example input image
+├── gray_quality.py        # Optional Python scripts
+├── gray_to_hex.py
+├── rgb_quality.py
+├── rgb_to_hex.py
 └── README.md
-
 
 ---
 
-## Simulation
+## Simulation Instructions
 
 1. Open your preferred **Verilog simulator** (Vivado, ModelSim, Icarus Verilog).  
-2. Add the source file `src/image.v` and the testbench `testbench/tb_image_scaler.v`.  
+2. Add the source file `image.v` and the testbench `tb_image_scaler.v`.  
 3. Compile the design and run the simulation.  
 4. Observe the scaled output in the waveform or export the processed image from simulation output.
 
