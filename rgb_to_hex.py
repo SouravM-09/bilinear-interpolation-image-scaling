@@ -1,40 +1,47 @@
 from PIL import Image
+import os
 
-def hex_to_png(input_file, output_file, width, height):
-    # Create a new RGB image
-    img = Image.new("RGB", (width, height))
-    pixels = img.load()
+# --- Configuration (Must match your Verilog Testbench!) ---
+# --- Configuration (Must match your Verilog Testbench!) ---
+IMAGE_PATH = r"D:\USER\Downloads\input.jpg.jpeg"  # Added 'r' here
+HEX_PATH = r"D:\USER\Downloads\input_image.hex"   # Added 'r' here
+W_IN = 500
+H_IN = 500
+CHANNELS = 3 # 1 for Grayscale, 3 for RGB
 
+def generate_hex():
     try:
-        with open(input_file, 'r') as f:
-            # Read lines and strip whitespace/newlines
-            hex_data = [line.strip() for line in f if line.strip()]
+        # 1. Load and resize the image
+        img = Image.open(IMAGE_PATH)
+        img = img.resize((W_IN, H_IN), Image.Resampling.NEAREST)
+        
+        # 2. Convert to correct color mode
+        if CHANNELS == 1:
+            img = img.convert('L') # Convert to grayscale
+        else:
+            img = img.convert('RGB')
             
-        # Fill the image pixel by pixel
-        for y in range(height):
-            for x in range(width):
-                idx = y * width + x
-                if idx < len(hex_data):
-                    # Convert hex string (RRGGBB) to integer tuple (R, G, B)
-                    hex_val = hex_data[idx]
-                    r = int(hex_val[0:2], 16)
-                    g = int(hex_val[2:4], 16)
-                    b = int(hex_val[4:6], 16)
-                    pixels[x, y] = (r, g, b)
-                else:
-                    # If file is shorter than expected, fill with black
-                    pixels[x, y] = (0, 0, 0)
-
-        img.save(output_file)
-        print(f"Success! Image saved as {output_file}")
-
-    except FileNotFoundError:
-        print("Error: Hex file not found.")
+        pixels = img.load()
+        
+        # 3. Write to hex file
+        with open(HEX_PATH, 'w') as f:
+            for y in range(H_IN):
+                for x in range(W_IN):
+                    if CHANNELS == 1:
+                        # Grayscale: 1 byte (e.g., "a4")
+                        val = pixels[x, y]
+                        f.write(f"{val:02x}\n")
+                    else:
+                        # RGB: 3 bytes packed as RRGGBB (e.g., "ff00a4")
+                        r, g, b = pixels[x, y]
+                        # R is MSB [23:16], G is [15:8], B is LSB [7:0]
+                        f.write(f"{r:02x}{g:02x}{b:02x}\n")
+                        
+        print(f"Success! Generated {HEX_PATH} ({W_IN}x{H_IN}, {CHANNELS} channels)")
+        
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"Error: {e}")
+        print("Make sure you have an image named 'test_image.png' in this folder.")
 
-# Parameters matching your Verilog module (W_OUT, H_OUT)
-W_OUT = 1000
-H_OUT = 1000
-
-hex_to_png(r"C:\Users\Devraj\Downloads\output_rgb1.hex", r"C:\Users\Devraj\Downloads\scaled_output.png", W_OUT, H_OUT)
+if __name__ == "__main__":
+    generate_hex()
