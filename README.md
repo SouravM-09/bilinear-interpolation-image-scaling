@@ -103,11 +103,4 @@ The output pixel value is computed using a weighted average of these four pixels
 * Pipeline optimization for higher throughput  
 * Integration with video processing pipeline  
 
----
 
-## Author
-
-**Sourav Mandal**  
-B.Tech Electronics Engineering  
-IIT (BHU) Varanasi  
-[LinkedIn](https://www.linkedin.com/in/sourav-mandal-91517b320) | [Email](mailto:sourav.mandal.ece24@itbhu.ac.in)
