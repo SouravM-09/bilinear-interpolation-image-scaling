@@ -1,239 +1,223 @@
 `timescale 1ns / 1ps
 
-module image_scaler_fsm #(
+module bilinear_scaler #(
+    // Default parameters (can be overridden during instantiation)
     parameter W_IN     = 500,
     parameter H_IN     = 500,
-    parameter W_OUT    = 1000,
-    parameter H_OUT    = 1000,
-    parameter CHANNELS = 3
+    parameter W_OUT    = 250,
+    parameter H_OUT    = 250,
+    parameter CHANNELS = 3    // 1 for Grayscale, 3 for RGB
 )(
-    input wire clk,
-    input wire rst_n,
-    input wire start,
+    input  wire                   clk,
+    input  wire                   rst_n, // Active-low reset
+    input  wire                   start,
 
-    output reg [31:0] rd_addr,
-    input wire [CHANNELS*8-1:0] pixel_in,
+    // =======================================================
+    // UPDATED: Dual-Port Memory Read Interface (Input Image)
+    // =======================================================
+    output reg  [31:0]            rd_addr_a,
+    output reg  [31:0]            rd_addr_b,
+    input  wire [(CHANNELS*8)-1:0] pixel_in_a,
+    input  wire [(CHANNELS*8)-1:0] pixel_in_b,
 
-    output reg [31:0] wr_addr,
-    output reg [CHANNELS*8-1:0] pixel_out,
-    output reg wr_en,
-    output reg done
+    // Memory Write Interface (Output Image)
+    output reg  [31:0]            wr_addr,
+    output reg  [(CHANNELS*8)-1:0] pixel_out,
+    output reg                    wr_en,
+    
+    // Status
+    output reg                    done
 );
 
-    // ================================
-    // Compile-time Q8.8 scale factors
-    // ================================
+    // =========================================================================
+    // Compile-Time Constant Scale Factors (Q24.8 format)
+    // =========================================================================
     localparam [31:0] SCALE_X = (W_IN << 8) / W_OUT;
     localparam [31:0] SCALE_Y = (H_IN << 8) / H_OUT;
 
-    // ================================
-    // FSM States
-    // ================================
-    localparam S_IDLE        = 0,
-               S_INIT_Y      = 1,
-               S_INIT_X      = 2,
-               S_CALC_COORDS = 3,
-
-               S_F0_ADDR = 4,  S_F0_WAIT = 5,  S_F0_DATA = 6,
-               S_F1_ADDR = 7,  S_F1_WAIT = 8,  S_F1_DATA = 9,
-               S_F2_ADDR = 10, S_F2_WAIT = 11, S_F2_DATA = 12,
-               S_F3_ADDR = 13, S_F3_WAIT = 14, S_F3_DATA = 15,
-
-               S_COMPUTE = 16,
-               S_NEXT_X  = 17,
-               S_NEXT_Y  = 18,
-               S_DONE    = 19;
-
-    reg [4:0] state;
-
-    // Coordinates
+    // =========================================================================
+    // Internal Registers
+    // =========================================================================
     reg [31:0] x_out, y_out;
     reg [31:0] x_acc, y_acc;
-
-    integer x0, y0, x1, y1;
+    
+    // Fractional weights (8-bit)
     reg [7:0] a, b;
+    
+    // Bounding box integer coordinates
+    reg [31:0] x0, y0, x1, y1;
+
+    // Pixel storage registers
+    reg [(CHANNELS*8)-1:0] p00, p10, p01, p11;
+    reg [(CHANNELS*8)-1:0] pixel_top, pixel_bot;
+
+    // Loop variable for color channels
     integer k;
 
-    // Pixel storage
-    reg [7:0] p00 [0:CHANNELS-1];
-    reg [7:0] p10 [0:CHANNELS-1];
-    reg [7:0] p01 [0:CHANNELS-1];
-    reg [7:0] p11 [0:CHANNELS-1];
+    // =========================================================================
+    // Optimized FSM State Encoding
+    // =========================================================================
+    localparam S_IDLE                 = 4'd0,
+               S_CALC_COORDS          = 4'd1,
+               
+               // Dual-Port Fetch States
+               S_FETCH_ROW0           = 4'd2,
+               S_WAIT_ROW0            = 4'd3,
+               S_LATCH_ROW0_WAIT_ROW1 = 4'd4,
+               S_LATCH_ROW1           = 4'd5,
+               
+               // Separable Math Datapath
+               S_INTERP_H             = 4'd6,
+               S_INTERP_V             = 4'd7,
+               
+               // Control States
+               S_NEXT_PIXEL           = 4'd8,
+               S_DONE                 = 4'd9;
 
-    reg signed [31:0] res [0:CHANNELS-1];
+    reg [3:0] state;
 
-    // ================================
-    // FSM
-    // ================================
+    // =========================================================================
+    // FSM and Datapath Logic
+    // =========================================================================
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state <= S_IDLE;
-            done  <= 0;
-            wr_en <= 0;
-            x_out <= 0;
-            y_out <= 0;
-            x_acc <= 0;
-            y_acc <= 0;
-        end
-        else begin
+            state     <= S_IDLE;
+            done      <= 0;
+            wr_en     <= 0;
+            x_out     <= 0;
+            y_out     <= 0;
+            x_acc     <= 0;
+            y_acc     <= 0;
+            rd_addr_a <= 0;
+            rd_addr_b <= 0;
+        end else begin
             case(state)
-
-            S_IDLE: begin
-                done <= 0;
-                if (start)
-                    state <= S_INIT_Y;
-            end
-
-            S_INIT_Y: begin
-                y_out <= 0;
-                y_acc <= 0;
-                state <= S_INIT_X;
-            end
-
-            S_INIT_X: begin
-                x_out <= 0;
-                x_acc <= 0;
-                state <= S_CALC_COORDS;
-            end
-
-            S_CALC_COORDS: begin
-                x0 = x_acc >> 8;
-                y0 = y_acc >> 8;
-
-                if (x0 >= W_IN-1) x0 = W_IN-2;
-                if (y0 >= H_IN-1) y0 = H_IN-2;
-
-                x1 = x0 + 1;
-                y1 = y0 + 1;
-
-                a <= x_acc[7:0];
-                b <= y_acc[7:0];
-
-                state <= S_F0_ADDR;
-            end
-
-            // =============================
-            // Fetch p00
-            // =============================
-            S_F0_ADDR: begin
-                rd_addr <= y0 * W_IN + x0;
-                state   <= S_F0_WAIT;
-            end
-
-            S_F0_WAIT: begin
-                state <= S_F0_DATA;
-            end
-
-            S_F0_DATA: begin
-                for (k=0; k<CHANNELS; k=k+1)
-                    p00[k] <= pixel_in[k*8 +: 8];
-                state <= S_F1_ADDR;
-            end
-
-            // =============================
-            // Fetch p10
-            // =============================
-            S_F1_ADDR: begin
-                rd_addr <= y0 * W_IN + x1;
-                state   <= S_F1_WAIT;
-            end
-
-            S_F1_WAIT: begin
-                state <= S_F1_DATA;
-            end
-
-            S_F1_DATA: begin
-                for (k=0; k<CHANNELS; k=k+1)
-                    p10[k] <= pixel_in[k*8 +: 8];
-                state <= S_F2_ADDR;
-            end
-
-            // =============================
-            // Fetch p01
-            // =============================
-            S_F2_ADDR: begin
-                rd_addr <= y1 * W_IN + x0;
-                state   <= S_F2_WAIT;
-            end
-
-            S_F2_WAIT: begin
-                state <= S_F2_DATA;
-            end
-
-            S_F2_DATA: begin
-                for (k=0; k<CHANNELS; k=k+1)
-                    p01[k] <= pixel_in[k*8 +: 8];
-                state <= S_F3_ADDR;
-            end
-
-            // =============================
-            // Fetch p11
-            // =============================
-            S_F3_ADDR: begin
-                rd_addr <= y1 * W_IN + x1;
-                state   <= S_F3_WAIT;
-            end
-
-            S_F3_WAIT: begin
-                state <= S_F3_DATA;
-            end
-
-            S_F3_DATA: begin
-                for (k=0; k<CHANNELS; k=k+1)
-                    p11[k] <= pixel_in[k*8 +: 8];
-                state <= S_COMPUTE;
-            end
-
-            // =============================
-            // Bilinear Interpolation
-            // =============================
-            S_COMPUTE: begin
-                for (k=0; k<CHANNELS; k=k+1) begin
-                    res[k] = ((256-a)*(256-b)*p00[k] +
-                              a*(256-b)*p10[k] +
-                              (256-a)*b*p01[k] +
-                              a*b*p11[k] + 32768) >> 16;
-
-                    if (res[k] > 255)
-                        res[k] = 255;
-
-                    pixel_out[k*8 +: 8] <= res[k][7:0];
+                
+                S_IDLE: begin
+                    done  <= 0;
+                    wr_en <= 0;
+                    if (start) begin
+                        x_out <= 0;
+                        y_out <= 0;
+                        x_acc <= 0;
+                        y_acc <= 0;
+                        state <= S_CALC_COORDS;
+                    end
                 end
 
-                wr_addr <= y_out * W_OUT + x_out;
-                wr_en   <= 1;
-                state   <= S_NEXT_X;
-            end
+                S_CALC_COORDS: begin
+                    // 1. Extract integer coordinates
+                    x0 = x_acc >> 8;
+                    y0 = y_acc >> 8;
 
-            S_NEXT_X: begin
-                wr_en <= 0;
-                x_acc <= x_acc + SCALE_X;
+                    // 2. Extract fractional weights
+                    a <= x_acc[7:0];
+                    b <= y_acc[7:0];
 
-                if (x_out < W_OUT-1) begin
-                    x_out <= x_out + 1;
-                    state <= S_CALC_COORDS;
+                    // 3. Boundary clamping
+                    if (x0 >= W_IN - 1) begin
+                        x0 = W_IN - 1;
+                        x1 = W_IN - 1;
+                    end else begin
+                        x1 = x0 + 1;
+                    end
+
+                    if (y0 >= H_IN - 1) begin
+                        y0 = H_IN - 1;
+                        y1 = H_IN - 1;
+                    end else begin
+                        y1 = y0 + 1;
+                    end
+
+                    state <= S_FETCH_ROW0;
                 end
-                else
-                    state <= S_NEXT_Y;
-            end
-
-            S_NEXT_Y: begin
-                y_acc <= y_acc + SCALE_Y;
-
-                if (y_out < H_OUT-1) begin
-                    y_out <= y_out + 1;
-                    state <= S_INIT_X;
+                
+                // =============================================================
+                // Memory Fetch Phase (Dual-Port)
+                // =============================================================
+                S_FETCH_ROW0: begin
+                    rd_addr_a <= y0 * W_IN + x0; // Top-left
+                    rd_addr_b <= y0 * W_IN + x1; // Top-right
+                    state     <= S_WAIT_ROW0;
                 end
-                else
-                    state <= S_DONE;
-            end
 
-            S_DONE: begin
-                done <= 1;
-            end
+                S_WAIT_ROW0: begin
+                    rd_addr_a <= y1 * W_IN + x0; // Bottom-left
+                    rd_addr_b <= y1 * W_IN + x1; // Bottom-right
+                    state     <= S_LATCH_ROW0_WAIT_ROW1;
+                end
 
+                S_LATCH_ROW0_WAIT_ROW1: begin
+                    p00 <= pixel_in_a;
+                    p10 <= pixel_in_b;
+                    state <= S_LATCH_ROW1;
+                end
+
+                S_LATCH_ROW1: begin
+                    p01 <= pixel_in_a;
+                    p11 <= pixel_in_b;
+                    state <= S_INTERP_H;
+                end
+
+                // =============================================================
+                // Math Phase (Separable 1D Interpolation)
+                // =============================================================
+                S_INTERP_H: begin
+                    // Interpolate Horizontally using (255 - a) for strict 8-bit limit
+                    // Adding +128 ensures nearest-integer rounding before shifting
+                    for (k = 0; k < CHANNELS; k = k + 1) begin
+                        pixel_top[k*8 +: 8] <= (( (255 - a) * p00[k*8 +: 8] ) + ( a * p10[k*8 +: 8] ) + 128) >> 8;
+                        pixel_bot[k*8 +: 8] <= (( (255 - a) * p01[k*8 +: 8] ) + ( a * p11[k*8 +: 8] ) + 128) >> 8;
+                    end
+                    state <= S_INTERP_V;
+                end
+
+                S_INTERP_V: begin
+                    // Interpolate Vertically
+                    for (k = 0; k < CHANNELS; k = k + 1) begin
+                        pixel_out[k*8 +: 8] <= (( (255 - b) * pixel_top[k*8 +: 8] ) + ( b * pixel_bot[k*8 +: 8] ) + 128) >> 8;
+                    end
+                    
+                    wr_addr <= y_out * W_OUT + x_out;
+                    wr_en   <= 1;
+                    state   <= S_NEXT_PIXEL;
+                end
+
+                // =============================================================
+                // Control Phase
+                // =============================================================
+                S_NEXT_PIXEL: begin
+                    wr_en <= 0; // De-assert write enable immediately
+                    
+                    // Increment X Accumulator
+                    x_acc <= x_acc + SCALE_X;
+                    
+                    if (x_out < W_OUT - 1) begin
+                        x_out <= x_out + 1;
+                        state <= S_CALC_COORDS;
+                    end else begin
+                        // End of row: Reset X, Increment Y Accumulator
+                        x_out <= 0;
+                        x_acc <= 0;
+                        y_acc <= y_acc + SCALE_Y;
+                        
+                        if (y_out < H_OUT - 1) begin
+                            y_out <= y_out + 1;
+                            state <= S_CALC_COORDS;
+                        end else begin
+                            // End of image
+                            state <= S_DONE;
+                        end
+                    end
+                end
+
+                S_DONE: begin
+                    done <= 1;
+                end
+
+                default: state <= S_IDLE;
             endcase
         end
     end
 
-endmodule
+endmodule       
